@@ -51,6 +51,19 @@ export class DocumentGenerationQueue {
     }
   }
 
+  /**
+   * Document workers connected to this queue, or null when Redis won't say
+   * (some hosted Redis servers disable CLIENT LIST)
+   */
+  async workerCount(): Promise<number | null> {
+    try {
+      return await this.docQueue.getWorkersCount();
+    } catch (error) {
+      this.logger.warn(`Could not count document workers: ${error?.message}`);
+      return null;
+    }
+  }
+
   async getJobStatus(jobId: string) {
     const job = await this.docQueue.getJob(jobId);
 

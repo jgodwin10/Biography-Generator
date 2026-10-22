@@ -130,6 +130,10 @@ export class BookGenerationProcessor extends WorkerHost {
 
     const existingTypes = new Set(existingDocs.map((doc) => doc.type));
 
+    if (types.some((type) => !existingTypes.has(type))) {
+      await this.ensureDocumentWorker();
+    }
+
     const jobPromises: Promise<any>[] = [];
 
     for (const type of types) {
@@ -186,6 +190,33 @@ export class BookGenerationProcessor extends WorkerHost {
     this.logMemory('After English documents');
 
     this.logger.log('✅ English documents generated');
+  }
+
+  /**
+   * The EPUB/PDF files are built by the separate document worker process
+   * (start:worker). Without one, jobs sit in the queue until they time out,
+   * so fail early with a clear reason instead. Waits a minute first in case
+   * the worker is just restarting.
+   */
+  private async ensureDocumentWorker(): Promise<void> {
+    const maxWaitMs = 60000;
+    const checkInterval = 5000;
+
+    for (let waited = 0; ; waited += checkInterval) {
+      const workers = await this.documentQueue.workerCount();
+      if (workers === null || workers > 0) return;
+
+      if (waited >= maxWaitMs) {
+        throw new Error(
+          'No document worker is connected to the "document-generation" queue. Start the worker service (npm run start:worker) with the same REDIS_URL as the API.',
+        );
+      }
+
+      this.logger.warn(
+        `No document worker connected yet, waiting ${checkInterval / 1000}s...`,
+      );
+      await this.delay(checkInterval);
+    }
   }
 
   /**
