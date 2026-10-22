@@ -113,6 +113,32 @@ async function bootstrap() {
     `🗄️  Database: ${describeDatabase()}`,
   );
   databaseWarnings().forEach((warning) => console.warn(`⚠️  ${warning}`));
+
+  await startEmbeddedDocumentWorker();
+}
+
+/**
+ * The EPUB/PDF builder normally runs as its own process (start:worker). On a
+ * single-service deploy there is none, so run it inside the API unless
+ * DOCUMENT_WORKER=external says a separate worker service exists.
+ */
+async function startEmbeddedDocumentWorker() {
+  if ((process.env.DOCUMENT_WORKER || '').toLowerCase() === 'external') {
+    console.log('📄 Document worker: external service (DOCUMENT_WORKER=external)');
+    return;
+  }
+
+  // The worker exits the process without these; keep the API up instead
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY) {
+    console.error(
+      '❌ Document worker NOT started: CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY missing. Books will fail at the EPUB/PDF step.',
+    );
+    return;
+  }
+
+  console.log('📄 Document worker: starting inside the API process');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require('./workers/document-worker');
 }
 
 bootstrap();

@@ -41,6 +41,10 @@ services:
       # you upgrade, e.g. 1536 on a 2 GB "standard" instance.
       - key: NODE_OPTIONS
         value: --max-old-space-size=400
+      # EPUB/PDF files are built by the biography-worker service below. Remove
+      # this to build them inside the API instead (single-service deploy).
+      - key: DOCUMENT_WORKER
+        value: external
       # Supabase → Connect → "Session pooler" connection string (port 5432),
       # with your database password filled in. Render has no IPv6, so the
       # "Direct connection" host won't work. SSL is turned on automatically.
