@@ -3,7 +3,7 @@
 import * as dotenv from 'dotenv';
 dotenv.config();
 
-import { Worker } from 'bullmq';
+import { UnrecoverableError, Worker } from 'bullmq';
 import Redis from 'ioredis';
 import { DataSource } from 'typeorm';
 
@@ -132,6 +132,20 @@ const worker = new Worker(
 
       log.log(`Processing ${type} for project ${projectId} in ${language}`);
 
+      // Get project data first: the job record below references it, and a
+      // deleted project (e.g. a stale queued job) can never succeed, so
+      // don't let BullMQ retry it
+      const project = await projectRepo.findOne({
+        where: { id: projectId },
+        relations: ['chapters', 'images'],
+      });
+
+      if (!project) {
+        throw new UnrecoverableError(
+          `Project ${projectId} not found (deleted?) — dropping ${type} job`,
+        );
+      }
+
       // Create job record
       const jobRecord = jobRepo.create({
         projectId,
@@ -141,16 +155,6 @@ const worker = new Worker(
         startedAt: new Date(),
       });
       await jobRepo.save(jobRecord);
-
-      // Get project data
-      const project = await projectRepo.findOne({
-        where: { id: projectId },
-        relations: ['chapters', 'images'],
-      });
-
-      if (!project) {
-        throw new Error(`Project ${projectId} not found`);
-      }
 
       log.log(
         `Found project with ${project.chapters.length} chapters and ${project.images.length} images`,
