@@ -72,8 +72,15 @@ export class ContentService {
     project.numberOfChapters = generateDto.numberOfChapters || 12;
     await this.projectRepository.save(project);
 
-    // Start generation in background
-    this.generateBiographyBackground(projectId, generateDto, job.id);
+    // Start generation in background. Nothing awaits it, so an error that
+    // escapes it must be caught here or Node exits the whole API.
+    this.generateBiographyBackground(projectId, generateDto, job.id).catch(
+      (error) =>
+        this.logger.error(
+          `Background generation crashed for project ${projectId}:`,
+          error,
+        ),
+    );
 
     return {
       message: 'Biography generation started',
@@ -345,17 +352,26 @@ export class ContentService {
         error,
       );
 
-      job.status = JobStatus.FAILED;
-      job.error = error.message;
-      job.completedAt = new Date();
-      await this.jobRepository.save(job);
+      // Recording the failure can fail too (e.g. a dropped DB connection);
+      // that must not hide the original error or skip the event below
+      try {
+        job.status = JobStatus.FAILED;
+        job.error = error.message;
+        job.completedAt = new Date();
+        await this.jobRepository.save(job);
 
-      const project = await this.projectRepository.findOne({
-        where: { id: projectId },
-      });
-      if (project) {
-        project.status = ProjectStatus.FAILED;
-        await this.projectRepository.save(project);
+        const project = await this.projectRepository.findOne({
+          where: { id: projectId },
+        });
+        if (project) {
+          project.status = ProjectStatus.FAILED;
+          await this.projectRepository.save(project);
+        }
+      } catch (saveError) {
+        this.logger.error(
+          `Could not mark project ${projectId} as failed:`,
+          saveError,
+        );
       }
 
       this.eventEmitter.emit('content.generation.failed', {

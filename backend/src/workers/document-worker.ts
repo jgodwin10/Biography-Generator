@@ -46,6 +46,12 @@ const log = {
     console.warn(`[${new Date().toISOString()}] WARN ${msg}`),
 };
 
+// Keep the worker alive on a stray rejected promise instead of exiting with
+// status 1 mid-document; BullMQ fails and retries the job itself
+process.on('unhandledRejection', (reason) => {
+  log.error('❌ Unhandled promise rejection (process kept alive):', reason);
+});
+
 log.log('🚀 Starting Document Worker...');
 log.log(`Redis: ${describeRedis()}`);
 log.log(`Database: ${describeDatabase()}`);

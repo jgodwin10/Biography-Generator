@@ -281,12 +281,18 @@ export class GeminiService {
       geminiKeys.push(...keys);
     }
 
+    // Override with GEMINI_MODEL / OPENAI_MODEL when a model is retired
+    const geminiModel =
+      this.configService.get<string>('GEMINI_MODEL') || 'gemini-3.5-flash-lite';
+    const openaiModel =
+      this.configService.get<string>('OPENAI_MODEL') || 'gpt-4.1-nano';
+
     const uniqueGeminiKeys = [...new Set(geminiKeys)];
     uniqueGeminiKeys.forEach((key) => {
       this.apiProviders.push({
         type: 'gemini',
         client: new GoogleGenerativeAI(key),
-        model: 'gemini-2.5-flash-lite',
+        model: geminiModel,
         lastUsedAt: 0,
         rateLimitedUntil: 0,
         consecutiveErrors: 0,
@@ -301,7 +307,7 @@ export class GeminiService {
       this.apiProviders.push({
         type: 'openai',
         client: new OpenAI({ apiKey: openaiKey }),
-        model: 'gpt-4.1-nano',
+        model: openaiModel,
         lastUsedAt: 0,
         rateLimitedUntil: 0,
         consecutiveErrors: 0,
@@ -366,6 +372,15 @@ export class GeminiService {
       error?.message?.includes('API_KEY_INVALID') ||
       error?.message?.includes('permission') ||
       error?.message?.includes('disabled')
+    );
+  }
+
+  /** 404: this provider's model was retired or isn't offered to this key */
+  private isModelUnavailableError(error: any): boolean {
+    return (
+      error?.status === 404 ||
+      error?.message?.includes('404 Not Found') ||
+      error?.message?.includes('no longer available')
     );
   }
   // ══════════════════════════════════════════════════════════════
@@ -442,7 +457,8 @@ export class GeminiService {
       this.isNetworkError(error) ||
       this.isRateLimitError(error) ||
       this.isOverloadError(error) ||
-      this.isAccessDeniedError(error) // 403 = skip this key, try next
+      this.isAccessDeniedError(error) || // 403 = skip this key, try next
+      this.isModelUnavailableError(error) // 404 = skip this model, try next
     );
   }
   // ══════════════════════════════════════════════════════════════
@@ -710,6 +726,8 @@ ${PLAIN_LANGUAGE_RULES}`;
 
         const errorType = this.isAccessDeniedError(error)
           ? 'access_denied' // ← NEW
+          : this.isModelUnavailableError(error)
+            ? 'model_unavailable'
           : this.isRateLimitError(error)
             ? 'rate_limit'
             : this.isNetworkError(error)
@@ -733,6 +751,17 @@ ${PLAIN_LANGUAGE_RULES}`;
             `Provider #${providerIdx} (${provider.type}) ACCESS DENIED (403) — permanently skipping this key. Try the next provider immediately.`,
           );
           // NO DELAY — immediately try next provider, no point waiting
+          continue;
+        }
+
+        // 404 MODEL UNAVAILABLE — same model on every key of this type, so
+        // lock this provider out and move on (e.g. to OpenAI) right away
+        if (this.isModelUnavailableError(error)) {
+          provider.rateLimitedUntil = Date.now() + 24 * 60 * 60 * 1000;
+          provider.consecutiveErrors = this.MAX_CONSECUTIVE_ERRORS;
+          this.logger.error(
+            `Provider #${providerIdx} (${provider.type}) model "${provider.model}" is unavailable (404) — skipping it. Set GEMINI_MODEL / OPENAI_MODEL to a current model.`,
+          );
           continue;
         }
 

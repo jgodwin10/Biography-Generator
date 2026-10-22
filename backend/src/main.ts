@@ -8,6 +8,13 @@ import {
   describeDatabase,
 } from './config/connections';
 
+// A stray rejected promise (e.g. a fire-and-forget DB call during a long
+// generation) would otherwise exit the API with status 1. Log it loudly and
+// keep serving; the job it belonged to fails on its own.
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ Unhandled promise rejection (process kept alive):', reason);
+});
+
 async function bootstrap() {
   // const app = await NestFactory.create(AppModule);
 
