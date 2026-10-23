@@ -22,6 +22,8 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UserService } from './user.service';
 import { CopyrightSettingsDto } from './dto/copyright-settings.dto';
+import { TableOfContentsSettingsDto } from './dto/table-of-contents-settings.dto';
+import { FontSettingsDto } from './dto/font-settings.dto';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -113,5 +115,56 @@ export class AuthController {
     @Body() settings: CopyrightSettingsDto,
   ) {
     return this.userService.updateCopyright(req.user.id, settings);
+  }
+
+  @Get('table-of-contents')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: "Get this account's table of contents format" })
+  async getTableOfContents(@Request() req) {
+    return this.userService.getTableOfContents(req.user.id);
+  }
+
+  @Post('table-of-contents/preview')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: 'Render an unsaved table of contents format' })
+  async previewTableOfContents(
+    @Request() req,
+    @Body() settings: TableOfContentsSettingsDto,
+  ) {
+    return this.userService.previewTableOfContents(req.user.id, settings);
+  }
+
+  @Put('table-of-contents')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: "Update this account's table of contents format (applies to new books)",
+  })
+  async updateTableOfContents(
+    @Request() req,
+    @Body() settings: TableOfContentsSettingsDto,
+  ) {
+    return this.userService.updateTableOfContents(req.user.id, settings);
+  }
+
+  @Get('fonts')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({ summary: "Get this account's heading and body fonts" })
+  async getFonts(@Request() req) {
+    return this.userService.getFonts(req.user.id);
+  }
+
+  @Put('fonts')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('JWT-auth')
+  @ApiOperation({
+    summary: "Update this account's heading and body fonts (applies to new books)",
+  })
+  async updateFonts(@Request() req, @Body() settings: FontSettingsDto) {
+    return this.userService.updateFonts(req.user.id, settings);
   }
 }

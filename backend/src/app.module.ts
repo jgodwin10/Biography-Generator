@@ -24,6 +24,7 @@ import { QueueModule } from './queues/queues.module';
 import { CacheModule } from './queues/cache/cache.module';
 import { HealthController } from './health.controller';
 import { RlsLockdownService } from './DB/rls-lockdown.service';
+import { SchemaPatchService } from './DB/schema-patch.service';
 import {
   databaseConnection,
   shouldSynchronize,
@@ -59,6 +60,6 @@ import {
     BookGeneratorModule,
   ],
   controllers: [HealthController],
-  providers: [RlsLockdownService],
+  providers: [SchemaPatchService, RlsLockdownService],
 })
 export class AppModule {}

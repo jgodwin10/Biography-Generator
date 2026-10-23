@@ -1,5 +1,7 @@
 // src/modules/document/docx.service.ts
 import { Injectable, Logger } from '@nestjs/common';
+import { AsyncLocalStorage } from 'async_hooks';
+import { readFileSync } from 'fs';
 import { ConfigService } from '@nestjs/config';
 import {
   Document,
@@ -14,18 +16,57 @@ import {
   NumberFormat,
 } from 'docx';
 import axios from 'axios';
+import JSZip from 'jszip';
+import { BookFonts } from 'src/content/book-fonts';
+import {
+  ParsedToc,
+  parseTableOfContents,
+} from 'src/content/table-of-contents';
 import { RedisCacheService } from 'src/queues/cache/redis-cache.service';
 
 @Injectable()
 export class DocxService {
   private readonly logger = new Logger(DocxService.name);
 
-  // Define your preferred fonts
-  private readonly FONTS = {
+  // Fonts for books made before fonts could be chosen
+  private readonly ORIGINAL_FONTS = {
     title: 'Garamond', // Elegant serif for titles
     body: 'Georgia', // Readable serif for body text
     heading: 'Book Antiqua', // Classic for headings
   };
+
+  // The book being rendered's fonts, scoped to its call so concurrent
+  // renders on this shared service can't mix them up
+  private readonly bookFonts = new AsyncLocalStorage<BookFonts | undefined>();
+
+  private get FONTS() {
+    const fonts = this.bookFonts.getStore();
+    return fonts
+      ? {
+          title: fonts.heading.family,
+          body: fonts.body.family,
+          heading: fonts.heading.family,
+        }
+      : this.ORIGINAL_FONTS;
+  }
+
+  /**
+   * Embeds the chosen fonts so Word shows them without them installed.
+   * Word only takes one file per font here, so bold and italic are drawn
+   * from the regular one.
+   */
+  private embeddedFonts() {
+    const fonts = this.bookFonts.getStore();
+    if (!fonts) return [];
+    const faces = [fonts.heading, fonts.body].filter(
+      (face, index, all) =>
+        all.findIndex((f) => f.family === face.family) === index,
+    );
+    return faces.map((face) => ({
+      name: face.family,
+      data: readFileSync(face.regular),
+    }));
+  }
 
   private readonly DPI = 96;
 
@@ -43,6 +84,72 @@ export class DocxService {
   constructor(private configService: ConfigService) {}
 
   async generateDOCXBuffer(
+    title: string,
+    subtitle: string,
+    author: string,
+    chapters: any[],
+    images: any[] = [],
+    redisCache: RedisCacheService,
+    fonts?: BookFonts,
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    return this.bookFonts.run(fonts, () =>
+      this.buildDOCXBuffer(
+        title,
+        subtitle,
+        author,
+        chapters,
+        images,
+        redisCache,
+      ),
+    );
+  }
+
+  /**
+   * Two gaps in the docx library's font embedding: it never sets
+   * embedTrueTypeFonts, without which Word and LibreOffice ignore the
+   * fonts, and it names each file after its family, so "EB Garamond"
+   * becomes `fonts/EB Garamond.odttf` — a space Word rejects in a part
+   * name.
+   */
+  private async finishEmbeddedFonts(buffer: Buffer): Promise<Buffer> {
+    if (!this.bookFonts.getStore()) return buffer;
+    const zip = await JSZip.loadAsync(buffer);
+    const rels = zip.file('word/_rels/fontTable.xml.rels');
+    const settings = zip.file('word/settings.xml');
+    if (!rels || !settings) return buffer;
+
+    // Schema order puts it right after displayBackgroundShape
+    const settingsXml = await settings.async('string');
+    zip.file(
+      'word/settings.xml',
+      settingsXml.includes('<w:displayBackgroundShape/>')
+        ? settingsXml.replace(
+            '<w:displayBackgroundShape/>',
+            '<w:displayBackgroundShape/><w:embedTrueTypeFonts/>',
+          )
+        : settingsXml.replace(
+            /(<w:settings\b[^>]*>)/,
+            '$1<w:embedTrueTypeFonts/>',
+          ),
+    );
+
+    const spaced = Object.keys(zip.files).filter(
+      (name) => name.startsWith('word/fonts/') && name.includes(' '),
+    );
+    let relsXml = await rels.async('string');
+    for (const name of spaced) {
+      const renamed = name.replace(/ /g, '-');
+      zip.file(renamed, await zip.file(name)!.async('nodebuffer'));
+      zip.remove(name);
+      relsXml = relsXml
+        .split(`"${name.slice('word/'.length)}"`)
+        .join(`"${renamed.slice('word/'.length)}"`);
+    }
+    zip.file('word/_rels/fontTable.xml.rels', relsXml);
+    return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  }
+
+  private async buildDOCXBuffer(
     title: string,
     subtitle: string,
     author: string,
@@ -72,6 +179,7 @@ export class DocxService {
 
       // Create document with page numbers on ALL pages
       doc = new Document({
+        fonts: this.embeddedFonts(),
         sections: [
           {
             properties: {
@@ -109,7 +217,9 @@ export class DocxService {
       this.forceGC();
 
       // Generate buffer
-      const buffer = await Packer.toBuffer(doc);
+      const buffer = await this.finishEmbeddedFonts(
+        await Packer.toBuffer(doc),
+      );
 
       this.logger.log(`DOCX generated: ${filename} (${buffer.length} bytes)`);
       this.logMemory('DOCX Complete');
@@ -273,9 +383,12 @@ export class DocxService {
       this.isTableOfContentsChapter(c.title),
     );
     if (tocChapter) {
-      // Pass the chapter title instead of hardcoding
+      // Pages in the account's chosen format; older books use the legacy layout
+      const toc = parseTableOfContents(tocChapter.content);
       sections.push(
-        ...this.createTableOfContents(tocChapter.content, localizedTitles.toc),
+        ...(toc
+          ? this.createFormattedTableOfContents(toc)
+          : this.createTableOfContents(tocChapter.content, localizedTitles.toc)),
       );
     }
 
@@ -784,6 +897,62 @@ export class DocxService {
           alignment: AlignmentType.LEFT,
         }),
       );
+    });
+
+    return paragraphs;
+  }
+
+  /** A contents page made by buildTableOfContents */
+  private createFormattedTableOfContents(toc: ParsedToc): Paragraph[] {
+    const paragraphs: Paragraph[] = [
+      new Paragraph({
+        heading: HeadingLevel.HEADING_1,
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 300 },
+        pageBreakBefore: true,
+        children: [
+          new TextRun({
+            text: toc.heading,
+            bold: true,
+            size: 40,
+            font: this.FONTS.heading,
+          }),
+        ],
+      }),
+    ];
+
+    toc.entries.forEach((entry) => {
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: entry.text,
+              bold: true,
+              size: 24,
+              color: '2C3E50',
+              font: this.FONTS.heading,
+            }),
+          ],
+          spacing: { before: 240, after: 80 },
+        }),
+      );
+
+      entry.children.forEach((child) => {
+        paragraphs.push(
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: child.text,
+                size: child.level === 1 ? 20 : 18,
+                color: child.level === 1 ? '34495E' : '7F8C8D',
+                font: this.FONTS.body,
+              }),
+            ],
+            spacing: { after: 60 },
+            indent: { left: 360 * child.level },
+          }),
+        );
+      });
     });
 
     return paragraphs;

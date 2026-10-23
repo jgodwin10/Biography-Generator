@@ -5,6 +5,7 @@ import { Chapter } from './chapter.entity';
 import { Translation } from './translation.entity';
 import { Document } from './document.entity';
 import { Job } from './job.entity';
+import type { ProjectFonts } from '../../content/book-fonts';
 
 export enum ProjectStatus {
   DRAFT = 'DRAFT',
@@ -48,6 +49,11 @@ export class Project {
 
   @Column({ nullable: true, default: 'MEDIUM' })
   contentLength: string;
+
+  // Fonts the book was generated with; null for books made before fonts
+  // could be chosen (they keep the original look)
+  @Column({ type: 'jsonb', nullable: true })
+  fonts: ProjectFonts | null;
 
   @CreateDateColumn()
   createdAt: Date;

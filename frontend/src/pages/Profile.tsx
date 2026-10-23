@@ -4,6 +4,8 @@ import { useSelector } from "react-redux";
 import { type RootState } from "../redux/store";
 import { BookOpenIcon, HashIcon, MailIcon, UserIcon } from "../components/Icons";
 import CopyrightSettings from "../components/CopyrightSettings";
+import TableOfContentsSettings from "../components/TableOfContentsSettings";
+import FontSettings from "../components/FontSettings";
 
 const Profile = () => {
   const { user } = useSelector((state: RootState) => state.auth);
@@ -59,6 +61,10 @@ const Profile = () => {
       </div>
 
       <CopyrightSettings />
+
+      <TableOfContentsSettings />
+
+      <FontSettings />
 
       <Link to="/my-books" className="btn-secondary btn-lg mt-6 w-full sm:w-auto">
         <BookOpenIcon size={18} />

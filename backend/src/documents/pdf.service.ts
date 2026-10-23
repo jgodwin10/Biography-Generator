@@ -6,6 +6,11 @@ import { ConfigService } from '@nestjs/config';
 import * as path from 'path';
 import { Language } from 'src/DB/entities/translation.entity';
 import { BookFormatterBase } from './book-formatter.base';
+import { BookFonts } from 'src/content/book-fonts';
+import {
+  ParsedToc,
+  parseTableOfContents,
+} from 'src/content/table-of-contents';
 
 /**
  * Digital PDF for Google Play Books ("original pages" view): 6x9 page with
@@ -48,6 +53,7 @@ export class PdfService extends BookFormatterBase {
     images: any[] = [],
     redisCache: RedisCacheService,
     language: Language = Language.ENGLISH,
+    fonts?: BookFonts,
   ): Promise<{ buffer: Buffer; filename: string }> {
     return new Promise(async (resolve, reject) => {
       let doc: PDFKit.PDFDocument | null = null;
@@ -82,14 +88,25 @@ export class PdfService extends BookFormatterBase {
           compress: true,
         });
 
-        // Register custom fonts
+        // Register custom fonts: the book's chosen ones, or the originals
+        // for books made before fonts could be chosen
+        const files = fonts
+          ? {
+              title: {
+                regular: fonts.heading.regular,
+                bold: fonts.heading.bold,
+                extrabold: fonts.heading.extraBold,
+              },
+              body: fonts.body,
+            }
+          : this.FONTS;
         try {
-          doc.registerFont('TitleRegular', this.FONTS.title.regular);
-          doc.registerFont('TitleBold', this.FONTS.title.bold);
-          doc.registerFont('TitleExtraBold', this.FONTS.title.extrabold);
-          doc.registerFont('BodyRegular', this.FONTS.body.regular);
-          doc.registerFont('BodyBold', this.FONTS.body.bold);
-          doc.registerFont('BodyItalic', this.FONTS.body.italic);
+          doc.registerFont('TitleRegular', files.title.regular);
+          doc.registerFont('TitleBold', files.title.bold);
+          doc.registerFont('TitleExtraBold', files.title.extrabold);
+          doc.registerFont('BodyRegular', files.body.regular);
+          doc.registerFont('BodyBold', files.body.bold);
+          doc.registerFont('BodyItalic', files.body.italic);
         } catch (fontError) {
           this.logger.warn('Custom fonts not found, falling back to Helvetica');
           // Will use default fonts if custom ones aren't available
@@ -144,8 +161,15 @@ export class PdfService extends BookFormatterBase {
         );
         if (tocChapter) {
           doc.addPage();
-          doc.outline.addItem(headings.toc);
-          this.addTableOfContents(doc, tocChapter.content, headings.toc); // Pass title
+          // Pages in the account's chosen format; older books use the legacy layout
+          const toc = parseTableOfContents(tocChapter.content);
+          if (toc) {
+            doc.outline.addItem(this.cleanText(toc.heading));
+            this.addFormattedTableOfContents(doc, toc);
+          } else {
+            doc.outline.addItem(headings.toc);
+            this.addTableOfContents(doc, tocChapter.content, headings.toc); // Pass title
+          }
         }
 
         // MAIN CONTENT
@@ -422,6 +446,60 @@ export class PdfService extends BookFormatterBase {
         });
       doc.fillColor('#000000');
       doc.moveDown(2);
+    });
+  }
+
+  /** A contents page made by buildTableOfContents; every entry is tappable */
+  private addFormattedTableOfContents(
+    doc: PDFKit.PDFDocument,
+    toc: ParsedToc,
+  ): void {
+    const leftMargin = 50;
+    const contentWidth = doc.page.width - 100;
+
+    const headerFont = this.getFontOrFallback(
+      doc,
+      'TitleBold',
+      'Helvetica-Bold',
+    );
+    const bodyFont = this.getFontOrFallback(doc, 'BodyRegular', 'Helvetica');
+
+    doc
+      .fontSize(18)
+      .font(headerFont)
+      .text(this.cleanText(toc.heading), leftMargin, 50, {
+        width: contentWidth,
+        align: 'center',
+      });
+    doc.moveDown(1);
+
+    toc.entries.forEach((entry) => {
+      const destination = this.chapterDestination(entry.chapterNumber);
+      doc
+        .fontSize(12)
+        .font(headerFont)
+        .fillColor('#2C3E50')
+        .text(entry.text, leftMargin, doc.y, {
+          width: contentWidth,
+          align: 'left',
+          goTo: destination,
+        });
+
+      entry.children.forEach((child) => {
+        const indent = 20 * child.level;
+        doc
+          .fontSize(child.level === 1 ? 11 : 10)
+          .font(bodyFont)
+          .fillColor(child.level === 1 ? '#34495E' : '#7F8C8D')
+          .text(child.text, leftMargin + indent, doc.y + 2, {
+            width: contentWidth - indent,
+            align: 'left',
+            goTo: destination,
+          });
+      });
+
+      doc.fillColor('#000000');
+      doc.moveDown(entry.children.length ? 0.9 : 0.5);
     });
   }
 

@@ -29,6 +29,7 @@ import {
   JobStatus,
 } from 'src/DB/entities';
 import { RedisCacheService } from 'src/queues/cache/redis-cache.service';
+import { bookFonts } from 'src/content/book-fonts';
 
 @Injectable()
 export class DocumentService {
@@ -134,6 +135,7 @@ export class DocumentService {
           generateDto.includeImages ? project.images : [],
           redisCache,
           generateDto.language,
+          bookFonts(project.fonts),
         );
       } else if (generateDto.type === DocumentType.PDF) {
         this.logger.log(
@@ -147,6 +149,7 @@ export class DocumentService {
           generateDto.includeImages ? project.images : [],
           redisCache, // Pass Redis service
           generateDto.language,
+          bookFonts(project.fonts),
         );
       } else {
         this.logger.log(
@@ -159,6 +162,7 @@ export class DocumentService {
           chapters,
           generateDto.includeImages ? project.images : [],
           redisCache, // Pass Redis service
+          bookFonts(project.fonts),
         );
       }
 

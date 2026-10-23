@@ -501,7 +501,7 @@ const CreateBook = () => {
               <li>No invented quotes or private scenes</li>
               <li>2 Google Play files: an English EPUB &amp; PDF</li>
               <li>
-                Your account's copyright page (
+                Your account's copyright page, contents format and fonts (
                 <Link to="/profile" className="font-semibold underline">
                   edit
                 </Link>

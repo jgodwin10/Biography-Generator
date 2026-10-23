@@ -2129,49 +2129,4 @@ Tone: confident, direct, warm. Like a back-cover blurb written by the biographer
       systemPrompt: this.getSystemPrompt(brief, title, subtitle),
     });
   }
-
-  // ═══════════════════════════════════════════════════════════════
-  // TABLE OF CONTENTS + COPYRIGHT
-  // ═══════════════════════════════════════════════════════════════
-  async generateTableOfContents(outline: BookOutlineDto): Promise<string> {
-    if (!outline || !outline.chapters || !Array.isArray(outline.chapters)) {
-      this.logger.error('Invalid outline structure:', outline);
-      throw new Error('Invalid outline: chapters array is missing or invalid');
-    }
-
-    let toc = 'Table of Contents\n\n';
-
-    outline.chapters.forEach((chapter) => {
-      if (!chapter) {
-        this.logger.warn('Skipping undefined chapter in TOC generation');
-        return;
-      }
-
-      toc += `Chapter ${chapter.chapterNumber}\n`;
-      toc += `${chapter.chapterTitle}\n\n`;
-
-      if (chapter.sections && Array.isArray(chapter.sections)) {
-        chapter.sections.forEach((section) => {
-          if (!section) {
-            this.logger.warn('Skipping undefined section in TOC generation');
-            return;
-          }
-
-          toc += `  ${section.sectionTitle}\n`;
-
-          if (section.subsections && Array.isArray(section.subsections)) {
-            section.subsections.forEach((subsection) => {
-              if (subsection) {
-                toc += `    ${subsection}\n`;
-              }
-            });
-          }
-          toc += '\n';
-        });
-      }
-      toc += '\n';
-    });
-
-    return toc;
-  }
 }

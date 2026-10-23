@@ -16,6 +16,41 @@ import {
   defaultWording,
   normalizeCopyrightSettings,
 } from '../content/copyright';
+import {
+  buildTableOfContents,
+  defaultTocSettings,
+  normalizeTocSettings,
+  TOC_SECTIONS,
+  TocChapterInput,
+  TocSettings,
+} from '../content/table-of-contents';
+import {
+  defaultFontSettings,
+  describeFontOptions,
+  FontSettings,
+  normalizeFontSettings,
+} from '../content/book-fonts';
+
+const TOC_PREVIEW_CHAPTERS: TocChapterInput[] = [
+  {
+    chapterTitle: 'Beginnings',
+    sections: [
+      { sectionTitle: 'A Small Town', subsections: ['Family Roots', 'School Years'] },
+      { sectionTitle: 'First Ambitions', subsections: ['An Early Break'] },
+    ],
+  },
+  {
+    chapterTitle: 'The Rise',
+    sections: [
+      { sectionTitle: 'Breakthrough', subsections: ['The Turning Point'] },
+      { sectionTitle: 'Life in the Spotlight', subsections: [] },
+    ],
+  },
+  {
+    chapterTitle: 'Legacy',
+    sections: [{ sectionTitle: 'What Remains', subsections: ['Influence Today'] }],
+  },
+];
 
 @Injectable()
 export class UserService {
@@ -139,6 +174,93 @@ export class UserService {
     }
 
     return this.getCopyright(id);
+  }
+
+  async getTableOfContents(id: string) {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      select: ['id', 'tableOfContents'],
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    const settings = normalizeTocSettings(user.tableOfContents);
+    return {
+      settings,
+      sections: TOC_SECTIONS,
+      // The option each part uses when the account hasn't picked one
+      defaults: defaultTocSettings(user.id),
+      preview: this.tableOfContentsPreview(user.id, settings),
+    };
+  }
+
+  /** Renders unsaved settings so the form can show the page as you edit */
+  async previewTableOfContents(id: string, settings: TocSettings) {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      select: ['id'],
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return { preview: this.tableOfContentsPreview(user.id, settings) };
+  }
+
+  // Sample contents page; real books use their own outline
+  private tableOfContentsPreview(seed: string, settings: TocSettings) {
+    return buildTableOfContents({
+      seed,
+      settings,
+      chapters: TOC_PREVIEW_CHAPTERS,
+    });
+  }
+
+  async updateTableOfContents(id: string, settings: TocSettings) {
+    const normalized = normalizeTocSettings(settings);
+    const result = await this.userRepository.update(id, {
+      tableOfContents: Object.keys(normalized).length ? normalized : null,
+    });
+
+    if (!result.affected) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return this.getTableOfContents(id);
+  }
+
+  async getFonts(id: string) {
+    const user = await this.userRepository.findOne({
+      where: { id },
+      select: ['id', 'fonts'],
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return {
+      settings: normalizeFontSettings(user.fonts),
+      sections: describeFontOptions(),
+      // The font each role uses when the account hasn't picked one
+      defaults: defaultFontSettings(user.id),
+    };
+  }
+
+  async updateFonts(id: string, settings: FontSettings) {
+    const normalized = normalizeFontSettings(settings);
+    const result = await this.userRepository.update(id, {
+      fonts: Object.keys(normalized).length ? normalized : null,
+    });
+
+    if (!result.affected) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return this.getFonts(id);
   }
 
   async remove(id: string): Promise<void> {

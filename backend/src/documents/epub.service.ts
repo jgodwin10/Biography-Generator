@@ -2,11 +2,15 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import * as path from 'path';
 import JSZip from 'jszip';
 import sharp from 'sharp';
 import { Language } from 'src/DB/entities/translation.entity';
 import { RedisCacheService } from 'src/queues/cache/redis-cache.service';
 import { BookFormatterBase } from './book-formatter.base';
+import { parseTableOfContents } from 'src/content/table-of-contents';
+import { BookFonts } from 'src/content/book-fonts';
 
 interface EpubPage {
   id: string;
@@ -14,6 +18,14 @@ interface EpubPage {
   title: string;
   xhtml: string;
   inToc: boolean;
+}
+
+interface EpubFont {
+  href: string;
+  family: string;
+  weight: 400 | 700;
+  style: 'normal' | 'italic';
+  file: string;
 }
 
 interface EpubImage {
@@ -63,6 +75,9 @@ li { margin-bottom: 0.3em; }
 .copyright p { font-size: 0.85em; }
 nav ol, .contents ol { list-style: none; margin-left: 0; }
 .contents li { margin-bottom: 0.6em; }
+.contents li ol { margin: 0.3em 0 0 1.2em; }
+.contents li li { margin-bottom: 0.2em; font-size: 0.9em; }
+.contents .toc-level-2 { margin-left: 1.2em; font-size: 0.85em; }
 .contents a, nav a { text-decoration: none; }
 figure { margin: 1.2em 0; text-align: center; page-break-inside: avoid; break-inside: avoid; }
 figure img { max-width: 100%; height: auto; }
@@ -80,6 +95,7 @@ figure img { max-width: 100%; height: auto; }
     images: any[] = [],
     redisCache: RedisCacheService,
     language: Language = Language.ENGLISH,
+    fonts?: BookFonts,
   ): Promise<{ buffer: Buffer; filename: string }> {
     this.logMemory('EPUB Start');
 
@@ -179,26 +195,42 @@ figure img { max-width: 100%; height: auto; }
       }
     }
 
-    // Visible, tappable table of contents (front matter, before chapter 1)
-    const tocEntries = chapterPages;
+    // Visible, tappable table of contents (front matter, before chapter 1),
+    // in the account's chosen format when the book has one
+    const tocChapter = chapters.find((c) =>
+      this.isTableOfContentsChapter(c.title),
+    );
+    const toc = tocChapter ? parseTableOfContents(tocChapter.content) : null;
+    const tocHeading = toc ? this.cleanText(toc.heading) : headings.toc;
+    const tocItems = toc
+      ? toc.entries
+          .filter((entry) => chapterPages[entry.chapterNumber - 1])
+          .map((entry) => {
+            const href = chapterPages[entry.chapterNumber - 1].href;
+            const children = entry.children
+              .map(
+                (child) =>
+                  `<li class="toc-level-${child.level}"><a href="${href}">${this.escapeXml(child.text)}</a></li>`,
+              )
+              .join('');
+            return `<li><a href="${href}">${this.escapeXml(entry.text)}</a>${children ? `<ol>${children}</ol>` : ''}</li>`;
+          })
+      : chapterPages.map(
+          (p) => `<li><a href="${p.href}">${this.escapeXml(p.title)}</a></li>`,
+        );
     pages.push({
       id: 'contents',
       href: 'contents.xhtml',
-      title: headings.toc,
+      title: tocHeading,
       inToc: true,
       xhtml: this.wrapXhtml(
-        headings.toc,
+        tocHeading,
         lang,
-        `<section class="contents" epub:type="toc"><h1>${this.escapeXml(headings.toc)}</h1><ol>${tocEntries
-          .map(
-            (p) =>
-              `<li><a href="${p.href}">${this.escapeXml(p.title)}</a></li>`,
-          )
-          .join('')}</ol></section>`,
+        `<section class="contents" epub:type="toc"><h1>${this.escapeXml(tocHeading)}</h1><ol>${tocItems.join('')}</ol></section>`,
       ),
     });
 
-    pages.push(...tocEntries);
+    pages.push(...chapterPages);
 
     const buffer = await this.packageEpub({
       title,
@@ -212,6 +244,7 @@ figure img { max-width: 100%; height: auto; }
       images: epubImages,
       tocTitle: headings.toc,
       firstChapterHref: chapterPages[0]?.href,
+      fonts,
     });
 
     this.logger.log(`EPUB generated: ${filename} (${buffer.length} bytes)`);
@@ -473,6 +506,46 @@ figure img { max-width: 100%; height: auto; }
     return text.length > 1000 ? `${text.slice(0, 997)}...` : text;
   }
 
+  /**
+   * The faces to embed for a book's chosen fonts. Books without chosen fonts
+   * embed none and keep the reading system's serif.
+   */
+  private epubFonts(fonts?: BookFonts): EpubFont[] {
+    if (!fonts) return [];
+    const faces: Omit<EpubFont, 'href'>[] = [
+      { family: fonts.body.family, weight: 400, style: 'normal', file: fonts.body.regular },
+      { family: fonts.body.family, weight: 400, style: 'italic', file: fonts.body.italic },
+      { family: fonts.body.family, weight: 700, style: 'normal', file: fonts.body.bold },
+      { family: fonts.body.family, weight: 700, style: 'italic', file: fonts.body.boldItalic },
+      { family: fonts.heading.family, weight: 400, style: 'normal', file: fonts.heading.regular },
+      { family: fonts.heading.family, weight: 700, style: 'normal', file: fonts.heading.bold },
+    ];
+    const seen = new Set<string>();
+    return faces
+      .filter((face) => {
+        // Same family for both roles, or a style that falls back to another file
+        const key = `${face.family}|${face.weight}|${face.style}`;
+        if (seen.has(key) || seen.has(face.file)) return false;
+        seen.add(key);
+        seen.add(face.file);
+        return true;
+      })
+      .map((face) => ({ ...face, href: `fonts/${path.basename(face.file)}` }));
+  }
+
+  /** @font-face rules for the embedded fonts, overriding the default stacks */
+  private fontStyles(fonts: BookFonts | undefined, faces: EpubFont[]): string {
+    if (!fonts) return '';
+    return [
+      ...faces.map(
+        (f) =>
+          `@font-face { font-family: "${f.family}"; font-weight: ${f.weight}; font-style: ${f.style}; src: url("${f.href}"); }`,
+      ),
+      `body { font-family: "${fonts.body.family}", Georgia, serif; }`,
+      `h1, h2, h3 { font-family: "${fonts.heading.family}", Georgia, serif; }`,
+    ].join('\n');
+  }
+
   private async packageEpub(book: {
     title: string;
     subtitle: string;
@@ -483,6 +556,7 @@ figure img { max-width: 100%; height: auto; }
     images: EpubImage[];
     tocTitle: string;
     firstChapterHref?: string;
+    fonts?: BookFonts;
   }): Promise<Buffer> {
     const zip = new JSZip();
     const identifier = `urn:uuid:${randomUUID()}`;
@@ -503,7 +577,17 @@ figure img { max-width: 100%; height: auto; }
 </container>`,
     );
 
-    zip.file('OEBPS/book.css', this.STYLES);
+    const fontFaces = this.epubFonts(book.fonts);
+    zip.file(
+      'OEBPS/book.css',
+      [this.STYLES, this.fontStyles(book.fonts, fontFaces)]
+        .filter(Boolean)
+        .join('\n'),
+    );
+
+    for (const font of fontFaces) {
+      zip.file(`OEBPS/${font.href}`, readFileSync(font.file));
+    }
 
     for (const page of book.pages) {
       zip.file(`OEBPS/${page.href}`, page.xhtml);
@@ -569,6 +653,10 @@ ${tocPages
       ...book.images.map(
         (img) =>
           `<item id="${img.id}" href="${img.href}" media-type="image/jpeg"/>`,
+      ),
+      ...fontFaces.map(
+        (font, index) =>
+          `<item id="font-${index + 1}" href="${font.href}" media-type="font/ttf"/>`,
       ),
     ];
 

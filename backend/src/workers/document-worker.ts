@@ -28,6 +28,7 @@ import { DocxService } from '../documents/docx.service';
 import { EpubService } from '../documents/epub.service';
 import { CloudinaryDocumentService } from '../documents/cloudinary-document.service';
 import { RedisCacheService } from '../queues/cache/redis-cache.service';
+import { bookFonts } from '../content/book-fonts';
 import {
   databaseConnection,
   databaseWarnings,
@@ -201,6 +202,7 @@ const worker = new Worker(
           includeImages ? project.images : [],
           redisCache,
           language,
+          bookFonts(project.fonts),
         );
       } else if (type === DocumentType.PDF) {
         result = await pdfService.generatePDFBuffer(
@@ -211,6 +213,7 @@ const worker = new Worker(
           includeImages ? project.images : [],
           redisCache,
           language,
+          bookFonts(project.fonts),
         );
       } else {
         result = await docxService.generateDOCXBuffer(
@@ -220,6 +223,7 @@ const worker = new Worker(
           chapters,
           includeImages ? project.images : [],
           redisCache,
+          bookFonts(project.fonts),
         );
       }
 

@@ -226,3 +226,22 @@ export const HashIcon = createIcon(
     <path d="M16 3l-2 18" />
   </>,
 );
+
+export const ListIcon = createIcon(
+  <>
+    <path d="M3 6h.01" />
+    <path d="M3 12h.01" />
+    <path d="M3 18h.01" />
+    <path d="M8 6h13" />
+    <path d="M8 12h13" />
+    <path d="M8 18h13" />
+  </>,
+);
+
+export const TypeIcon = createIcon(
+  <>
+    <path d="M4 7V4h16v3" />
+    <path d="M9 20h6" />
+    <path d="M12 4v16" />
+  </>,
+);

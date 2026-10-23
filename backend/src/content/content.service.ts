@@ -10,6 +10,8 @@ import { buildStyleProfile, describeStyleProfile } from './biography-style';
 import { GenerateBiographyDto } from './dto/generate-biography.dto';
 import { Chapter } from 'src/DB/entities/chapter.entity';
 import { buildCopyrightPage } from './copyright';
+import { buildTableOfContents } from './table-of-contents';
+import { resolveFontSettings } from './book-fonts';
 
 @Injectable()
 export class ContentService {
@@ -179,6 +181,14 @@ export class ContentService {
 
       await this.saveChapter(projectId, 'Copyright', 1, copyright);
 
+      // The book keeps the account's fonts as they are now
+      await this.projectRepository.update(projectId, {
+        fonts: resolveFontSettings(
+          owner?.userId || projectId,
+          owner?.user?.fonts,
+        ),
+      });
+
       const aboutBook = await this.geminiService.generateAboutBook(
         generateDto.title,
         generateDto.subtitle || '',
@@ -190,8 +200,12 @@ export class ContentService {
       // ── Cooldown after about book generation ───────────────────
       await this.cooldown();
 
-      const tableOfContents =
-        await this.geminiService.generateTableOfContents(outline);
+      // In the account's chosen format (see table-of-contents.ts)
+      const tableOfContents = buildTableOfContents({
+        seed: owner?.userId || projectId,
+        chapters: outline.chapters,
+        settings: owner?.user?.tableOfContents,
+      });
       await this.saveChapter(
         projectId,
         'Table of Contents',
