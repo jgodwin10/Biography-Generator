@@ -396,7 +396,7 @@ const CopyrightForm = ({ data }: { data: CopyrightResponse }) => {
   return (
     <form
       onSubmit={handleSubmit}
-      className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]"
+      className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]"
     >
       <div className="min-w-0">
         <div role="tablist" className="mb-6 inline-flex rounded-full bg-paper p-1 ring-1 ring-line">
@@ -509,7 +509,7 @@ const CopyrightForm = ({ data }: { data: CopyrightResponse }) => {
         )}
 
         <div className="mt-8 flex flex-wrap gap-3 border-t border-line pt-6">
-          <button type="submit" disabled={saving || !changed} className="btn-primary btn-lg">
+          <button type="submit" disabled={saving || !changed} className="btn-primary btn-lg w-full sm:w-auto">
             {saving ? (
               <>
                 <Spinner className="h-4 w-4" />
@@ -523,7 +523,7 @@ const CopyrightForm = ({ data }: { data: CopyrightResponse }) => {
             <button
               type="button"
               onClick={() => setForm(data.settings)}
-              className="btn-secondary btn-lg"
+              className="btn-secondary btn-lg w-full sm:w-auto"
             >
               Discard changes
             </button>
@@ -531,7 +531,7 @@ const CopyrightForm = ({ data }: { data: CopyrightResponse }) => {
         </div>
       </div>
 
-      <div className="lg:sticky lg:top-24">
+      <div className="min-w-0 lg:sticky lg:top-24">
         <p className="label flex items-center gap-2">
           Preview
           {changed && (
@@ -541,7 +541,7 @@ const CopyrightForm = ({ data }: { data: CopyrightResponse }) => {
           )}
           {previewing && <Spinner className="h-3.5 w-3.5 text-muted" />}
         </p>
-        <div className="max-h-[75vh] overflow-y-auto rounded-xl border border-line bg-paper p-5 font-serif text-sm leading-relaxed whitespace-pre-line text-ink">
+        <div className="max-h-[75vh] overflow-y-auto rounded-xl border border-line bg-paper p-4 font-serif text-sm leading-relaxed break-words whitespace-pre-line text-ink sm:p-5">
           {preview}
         </div>
         <p className="hint">
@@ -557,7 +557,7 @@ const CopyrightSettings = () => {
   const { data, isLoading, isError } = useGetCopyrightQuery();
 
   return (
-    <section className="card mt-6 p-6 sm:p-8">
+    <section className="card mt-6 px-4 py-6 sm:p-8">
       <div className="mb-6 flex items-start gap-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-paper text-muted ring-1 ring-line">
           <FileTextIcon size={18} />

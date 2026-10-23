@@ -75,7 +75,7 @@ const FontPicker = ({
 
   return (
     <div>
-      <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={section.label}>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2" role="radiogroup" aria-label={section.label}>
         {section.options.map((option, index) => {
           const active = option.id === selected;
           // Collapsed, keep the chosen and default fonts in view
@@ -195,7 +195,7 @@ const FontForm = ({ data }: { data: FontsResponse }) => {
   return (
     <form
       onSubmit={handleSubmit}
-      className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]"
+      className="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]"
     >
       <div className="min-w-0">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -234,7 +234,7 @@ const FontForm = ({ data }: { data: FontsResponse }) => {
         </div>
 
         <div className="mt-8 flex flex-wrap gap-3 border-t border-line pt-6">
-          <button type="submit" disabled={saving || !changed} className="btn-primary btn-lg">
+          <button type="submit" disabled={saving || !changed} className="btn-primary btn-lg w-full sm:w-auto">
             {saving ? (
               <>
                 <Spinner className="h-4 w-4" />
@@ -248,7 +248,7 @@ const FontForm = ({ data }: { data: FontsResponse }) => {
             <button
               type="button"
               onClick={() => setForm(data.settings)}
-              className="btn-secondary btn-lg"
+              className="btn-secondary btn-lg w-full sm:w-auto"
             >
               Discard changes
             </button>
@@ -256,7 +256,7 @@ const FontForm = ({ data }: { data: FontsResponse }) => {
         </div>
       </div>
 
-      <div className="lg:sticky lg:top-24">
+      <div className="min-w-0 lg:sticky lg:top-24">
         <p className="label flex items-center gap-2">
           Preview
           {changed && (
@@ -279,7 +279,7 @@ const FontSettings = () => {
   const { data, isLoading, isError } = useGetFontsQuery();
 
   return (
-    <section className="card mt-6 p-6 sm:p-8">
+    <section className="card mt-6 px-4 py-6 sm:p-8">
       <div className="mb-6 flex items-start gap-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-paper text-muted ring-1 ring-line">
           <TypeIcon size={18} />
